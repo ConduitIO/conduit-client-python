@@ -251,14 +251,28 @@ class Pipeline:
     ) -> Pipeline:
         """Configure the pipeline-level dead-letter queue (``Pipeline.DLQ``).
 
+        **Defaulting note (data-integrity):** ``UpdateDLQ`` takes
+        ``window_size``/``window_nack_threshold`` at face value with no
+        server-side defaulting -- unlike pipeline *creation*, where the engine
+        applies ``DefaultDLQ`` (``window_size=1``) if ``.dlq()`` is never
+        called at all. Leaving these ``None`` here and sending the protobuf
+        zero value would silently *disable* the nack-window stop-safety
+        (``window_size=0`` means "don't monitor"), which is strictly worse
+        than never calling ``.dlq()``. So this builder mirrors the engine's
+        own ``DefaultDLQ`` client-side: omitting ``window_size``/
+        ``window_nack_threshold`` defaults them to ``1``/``0`` on the emitted
+        ``UpdateDLQ`` payload; pass explicit values (including ``0``) to
+        override.
+
         Args:
             plugin: DLQ connector plugin; Conduit's own default is
                 ``builtin:log`` at ``WARN`` level (``proto/api/v1/api.proto``'s
                 ``Pipeline.DLQ.plugin`` doc comment) if never configured.
             window_size: how many recent acks/nacks are monitored
-                (``0`` disables the window; server default ``1``).
+                (``0`` disables the window). Defaults to ``1`` (matching the
+                engine's ``DefaultDLQ``) if not given -- see note above.
             window_nack_threshold: nacks tolerated within the window before
-                the pipeline stops (server default ``0``).
+                the pipeline stops. Defaults to ``0`` if not given.
             settings: DLQ connector config for keys that aren't valid Python
                 identifiers; merged with ``**kwargs`` (see module docstring).
             **kwargs: DLQ connector config for identifier-shaped keys, coerced
@@ -270,8 +284,10 @@ class Pipeline:
         self._dlq = _DLQSpec(
             plugin=plugin,
             settings=_settings(settings, kwargs),
-            window_size=window_size,
-            window_nack_threshold=window_nack_threshold,
+            window_size=window_size if window_size is not None else 1,
+            window_nack_threshold=(
+                window_nack_threshold if window_nack_threshold is not None else 0
+            ),
         )
         return self
 

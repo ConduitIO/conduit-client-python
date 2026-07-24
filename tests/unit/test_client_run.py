@@ -46,6 +46,10 @@ class _FakeControlPlane(
         self.stopped_reason: api_pb2.Pipeline.State.StoppedReason.ValueType = (
             api_pb2.Pipeline.State.STOPPED_REASON_UNSPECIFIED
         )
+        # When set, CreateConnector aborts instead of succeeding -- lets tests
+        # simulate the mid-sequence failure Client.run() deliberately doesn't
+        # roll back from (pipeline already created, a later step fails).
+        self.fail_create_connector = False
 
     def CreatePipeline(
         self, request: api_pb2.CreatePipelineRequest, context: grpc.ServicerContext
@@ -58,6 +62,8 @@ class _FakeControlPlane(
         self, request: api_pb2.CreateConnectorRequest, context: grpc.ServicerContext
     ) -> api_pb2.CreateConnectorResponse:
         self.calls.append(f"CreateConnector({request.plugin}, pipeline_id={request.pipeline_id})")
+        if self.fail_create_connector:
+            context.abort(grpc.StatusCode.INTERNAL, "simulated connector creation failure")
         self._next_connector_id += 1
         connector = api_pb2.Connector(
             id=f"connector-{self._next_connector_id}",
@@ -238,6 +244,25 @@ def test_stop_issues_stop_pipeline_graceful_by_default(
     run.stop()
 
     assert "StopPipeline(id=pipeline-1, force=False)" in servicer.calls
+
+
+def test_run_mid_sequence_failure_carries_pipeline_id(
+    fake_server: tuple[_FakeControlPlane, Client],
+) -> None:
+    """Regression test: run() deliberately never rolls back a partially
+    created pipeline, but the raised ConduitError must carry the
+    already-created pipeline_id -- otherwise the caller has no way to find
+    and clean up the orphaned pipeline.
+    """
+    servicer, client = fake_server
+    servicer.fail_create_connector = True
+    pipeline = Pipeline("orders-sync").source("generator").destination("log")
+
+    with pytest.raises(ConduitError) as exc_info:
+        client.run(pipeline)
+
+    assert exc_info.value.pipeline_id == "pipeline-1"
+    assert "pipeline-1" in str(exc_info.value)
 
 
 def test_stop_force_true_is_explicit() -> None:

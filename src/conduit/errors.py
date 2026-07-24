@@ -39,6 +39,7 @@ class ConduitError(Exception):
         config_path: str = "",
         suggestion: str = "",
         docs_url: str = "",
+        pipeline_id: str = "",
     ) -> None:
         """Initialize a structured, actionable error.
 
@@ -51,6 +52,15 @@ class ConduitError(Exception):
             config_path: JSON-pointer to the offending config field, if any.
             suggestion: human-readable fix hint, if any.
             docs_url: link to further documentation, if any.
+            pipeline_id: server-assigned pipeline id already created before
+                this error occurred, if any. Set by :meth:`conduit.client.Client.run`
+                on a mid-sequence failure (pipeline created, then a connector/
+                processor/DLQ/start call fails) -- ``run()`` deliberately does
+                not roll back already-created resources (see its docstring),
+                so this is the only way the caller learns the id needed to
+                clean them up. Empty when the error occurred before
+                ``CreatePipeline`` returned, or for errors unrelated to
+                ``run()`` (e.g. :meth:`Run.status`).
         """
         super().__init__(message)
         self.code = code
@@ -58,6 +68,7 @@ class ConduitError(Exception):
         self.config_path = config_path
         self.suggestion = suggestion
         self.docs_url = docs_url
+        self.pipeline_id = pipeline_id
 
     def __str__(self) -> str:
         """Render message plus any structured fields present, one per line."""
@@ -68,6 +79,8 @@ class ConduitError(Exception):
             lines.append(f"  suggestion: {self.suggestion}")
         if self.docs_url:
             lines.append(f"  docs: {self.docs_url}")
+        if self.pipeline_id:
+            lines.append(f"  pipeline id (already created): {self.pipeline_id}")
         return "\n".join(lines)
 
     @classmethod

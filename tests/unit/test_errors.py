@@ -137,3 +137,11 @@ def test_str_renders_structured_fields() -> None:
     assert "config path: /settings/url" in rendered
     assert "suggestion: set a valid URL" in rendered
     assert "docs: https://conduit.io/docs/errors/common.invalid_argument" in rendered
+
+
+def test_pipeline_id_defaults_empty_and_renders_when_set() -> None:
+    assert ConduitError("boom").pipeline_id == ""
+
+    err = ConduitError("boom", pipeline_id="pipeline-1")
+    assert err.pipeline_id == "pipeline-1"
+    assert "pipeline-1" in str(err)

@@ -121,6 +121,32 @@ def test_dlq_defaults_plugin_to_builtin_log() -> None:
     assert plan.dlq.dlq.plugin == "builtin:log"
 
 
+def test_dlq_defaults_window_size_to_one_when_not_given() -> None:
+    """Regression test: `UpdateDLQ` has no server-side defaulting, unlike
+    pipeline creation's `DefaultDLQ` (window_size=1). Leaving `window_size`
+    unset on the wire sends the protobuf zero value, which *disables* the
+    nack-window stop-safety -- worse than never calling `.dlq()` at all. The
+    builder must default `window_size=1`/`window_nack_threshold=0` itself
+    whenever `.dlq()` is called without explicit window args, matching the
+    engine's own `DefaultDLQ`. This bug shipped invisibly once (no test
+    covered the DLQ payload's window fields) -- do not regress it.
+    """
+    plan = Pipeline("p").dlq("builtin:log").build_requests()
+    assert plan.dlq is not None
+    assert plan.dlq.dlq.window_size == 1
+    assert plan.dlq.dlq.window_nack_threshold == 0
+
+
+def test_dlq_explicit_window_size_zero_is_respected() -> None:
+    """An explicit `window_size=0` is a deliberate override, not the same as
+    omitting the argument -- the builder must not clobber an intentional
+    opt-out of the nack window.
+    """
+    plan = Pipeline("p").dlq("builtin:log", window_size=0).build_requests()
+    assert plan.dlq is not None
+    assert plan.dlq.dlq.window_size == 0
+
+
 def test_settings_coerce_bool_to_lowercase_string() -> None:
     plan = Pipeline("p").source("x", recreate=True, dry_run=False).build_requests()
     assert dict(plan.create_connectors[0].config.settings) == {
