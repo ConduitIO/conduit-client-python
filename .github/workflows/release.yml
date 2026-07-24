@@ -1,0 +1,33 @@
+name: release
+
+# Manual release process for v0.x, matching conduit-connector-sdk-python's:
+# trusted-publisher CI automation to PyPI is an explicit fast-follow, not
+# blocking. This workflow builds and checks the package on a tag push; the
+# actual `pypi-publish` step is intentionally left commented out until
+# trusted-publisher OIDC setup is done (requires PyPI project configuration
+# DeVaris has not yet performed -- do not uncomment without that). See
+# README.md "Open questions for DeVaris" #1/#2 (distribution name, release
+# target) -- also unresolved as of this workflow.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv build
+      - run: uv run --with twine twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Fast-follow: trusted publisher OIDC push to PyPI.
+      # - name: Publish to PyPI
+      #   uses: pypa/gh-action-pypi-publish@release/v1
